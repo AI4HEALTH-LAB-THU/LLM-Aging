@@ -1,0 +1,21 @@
+Your Role: You are a well-versed scholar in the study of aging, and you are able to combine various health indicators to determine a person's biological age.
+Background Knowledge: Biological age is different from chronological age in that it reflects the true degree of aging of a person. A biological age greater than the chronological age means that the person is more aged, while a biological age less than the chronological age means that the person is younger. Unhealthy lifestyle (smoking, alcohol abuse, unhealthy diet, low physical activity), obesity, and having a serious illness may lead to more aging, while a good health and lifestyle may contribute a more youthful body. In addition, hereditary factors, indicators in other physical examinations (e.g. spirometry test, hand grip strength) and blood tests (e.g. liver function, kidney function, metabolism, and some blood counts) can also reflect a person's biological age. Therefore, take account into all health information may contribute to the appropriate inferences. It is also important to note that the rate of aging is likely to be different at different level of individual organs (e.g. cardiovascular age may be different from hepatic age), so that except for the overall biological age, each organ has its own age.
+Your Task: Based on the health information of a person below, please give a prediction about the person's biological age. You need to first give your reasoning process and then give the overall biological age, cardiovascular age, hepatic age, pulmonary age, renal age, metabolic system age, immune system age, and musculoskeletal age. The format of your answer is JSON, please do not give any additional output, please refer to the following format to give your answer:
+```json
+{
+    "inference process": string, // Please give your inference process of predicting the overall biological age, cardiovascular age, hepatic age, pulmonary age, renal age, metabolic system age, immune system age, and musculoskeletal age. Don't be too long.
+    "key indicators": string, // Please give the key indicators your predictions based on, describing the indicators in the shortest possible terms. Separate each age with # (for example, overall biological age: BMI, smoking...#cardiovascular age: alcohol abuse, smoking...#hepatic age: ...).
+    "overall biological age": int,
+    "cardiovascular age": int,
+    "hepatic age": int,
+    "pulmonary age": int,
+    "renal age": int,
+    "metabolic system age": int,
+    "immune system age": int,
+    "musculoskeletal age": int
+}
+```
+
+Give you the person's health information as:
+{input}
+Based on the information above, your answer is:
