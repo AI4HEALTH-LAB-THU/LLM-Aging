@@ -1,35 +1,30 @@
+import torch
 from vllm import LLM, SamplingParams
 from transformers import AutoTokenizer
 
 class ModelProcessor:
-    def __init__(self, model_dir: str, sc: int = 1, tensor_parallel_size: int = 1,
-                 trust_remote_code: bool = True, gpu_memory_utilization: float = 0.9, dtype: str = "bfloat16"):
+    def __init__(self, model_dir: str):
         """
         Initializes the ModelProcessor instance.
         Args:
             model_dir (str): The directory containing the model.
-            sc (int): Scaling factor.
             tensor_parallel_size (int): The number of devices for tensor parallelism.
             trust_remote_code (bool): Flag for trusting remote code.
             gpu_memory_utilization (float): GPU memory utilization percentage.
             dtype (str): Data type used for model computation.
         """
-        self.model = LLM(
-            model=model_dir,
-            tokenizer=model_dir,
-            tensor_parallel_size=tensor_parallel_size,
-            trust_remote_code=trust_remote_code,
-            gpu_memory_utilization=gpu_memory_utilization,
-            dtype=dtype
+        self.model = LLM(model=model_dir, trust_remote_code=True,
+            tensor_parallel_size=torch.cuda.device_count(), 
+            gpu_memory_utilization=0.9,
+            enable_prefix_caching=False,
+            max_num_seqs=128,
         )
         self.tokenizer = AutoTokenizer.from_pretrained(model_dir, trust_remote_code=True)
-        self.sc = sc
 
         # Default generation parameters
         self.sampling_params = None
 
-    def set_generation_params(self, do_sample=False, num_return_sequences=1, temperature=0, max_tokens=1024, 
-                              stop_tokens=None, stop_token_ids=None, prompt_logprobs=None, logprobs=None):
+    def set_generation_params(self, do_sample=False, num_return_sequences=1, temperature=0, max_tokens=1024):
         """
         Sets the generation parameters for the model.
         Args:
@@ -46,13 +41,9 @@ class ModelProcessor:
             n=num_return_sequences,
             temperature=temperature,
             max_tokens=max_tokens,
-            stop=stop_tokens,
-            stop_token_ids=stop_token_ids,
-            prompt_logprobs=prompt_logprobs,
-            logprobs=logprobs
         )
 
-    def generate_text(self, prompts):
+    def generate_aging(self, prompts):
         """Generates text based on the provided prompts."""
         if self.sampling_params:
             # Ensure sampling parameters are set
