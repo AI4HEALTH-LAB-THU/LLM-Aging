@@ -7,5 +7,5 @@ The code in this repository is used for the primary analysis presented in the pa
 
 For an overview of this study, see the figure below.
 
-![Fig1](https://github.com/user-attachments/assets/14cee582-748c-43be-860d-c35dc024cd9f)
+![Fig1_00](https://github.com/user-attachments/assets/727c923f-6b89-47a7-821e-c7c166aa1001)
 
