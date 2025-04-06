@@ -4,6 +4,10 @@
 # library(BiocManager)
 # BiocManager::install("enrichplot")
 # BiocManager::install("GEOquery")
+
+
+
+######### ------ The LLM effectively predicts overall and organ-specific ages ------
 library(arrow)
 library(jsonlite)
 library(survival)
@@ -21,10 +25,6 @@ library(ppcor)
 library(tidyverse)
 library(lubridate)
 library(svglite)
-
-
-
-######### ------ 1.The LLM effectively predicts overall and organ-specific ages ------
 ###### prepare data, UKB
 dat_age <- read_csv("Data/Models/llama3_70b/llama3-70b-result_only_age.csv")
 dat_cov <- read_rds("Data/covariates_outcomes/panel_indicators.rds")
@@ -156,15 +156,15 @@ for(i in 1:length(disease)) {
     dat_cox <- subset(dat_age, time > 0) 
   }
   
-  folds <- createFolds(dat_cox$event, k = 5)
+  folds <- createFolds(dat_cox$event, k = 3)
   for (i in 1:length(var_ls)) {
     var <- var_ls[i]
     c_index_values <- c()
     c_index_lower_ls <- c()
     c_index_upper_ls <- c()
     
-    for(j in 1:5) {
-      # train set and test set
+    for(j in 1:3) {
+      # train and test set
       test_indices <- folds[[j]]
       train_data <- dat_cox[-test_indices, ]
       test_data <- dat_cox[test_indices, ]
@@ -625,7 +625,7 @@ for(i in 1:length(disease)) {
   dat_cox <- dat_merge_analysis
   
   ## data is small, use all data; results are similar
-  # folds <- createFolds(dat_cox$event, k = 5)
+  # folds <- createFolds(dat_cox$event, k = 3)
   for (i in 1:length(var_ls)) {
     var <- var_ls[i]
     c_index_values <- c()
@@ -1233,14 +1233,14 @@ for(i in 1:length(disease)) {
     dat_cox <- subset(dat_age, time > 0) 
   }
   
-  folds <- createFolds(dat_cox$event, k = 5)
+  folds <- createFolds(dat_cox$event, k = 3)
   for (i in 1:length(var_ls)) {
     var <- var_ls[i]
     c_index_values <- c()
     c_index_lower_ls <- c()
     c_index_upper_ls <- c()
     
-    for(j in 1:5) {
+    for(j in 1:3) {
       test_indices <- folds[[j]]
       train_data <- dat_cox[-test_indices, ]
       test_data <- dat_cox[test_indices, ]
@@ -1563,14 +1563,12 @@ covariates_default <- c("Sex", "UKB_assessment_center",
                         "Education", "Employment", "Income", "Ethnicity",
                         "BMI", "Current_smoker", 
                         "Daily_alcohol_intake",
-                        "Hypertension_history", 
-                        "Diabetes_history")
+                        "Hypertension_history")
 covariates_with_acc <- c("Age", "Sex", "UKB_assessment_center",
                          "Education", "Employment", "Income", "Ethnicity",
                          "BMI", "Current_smoker", 
                          "Daily_alcohol_intake",
-                         "Hypertension_history", 
-                         "Diabetes_history")
+                         "Hypertension_history")
 
 aging_outcomes <- c("`Heel bone mineral density (BMD)`",
                     "`Pulse wave Arterial Stiffness index`",
@@ -2144,7 +2142,659 @@ ggsave("fig3a_acc_phenotype.pdf", plot = combined_plot, width = 22, height = 9)
 
 
 
-######### ------ 2.Leveraging age gaps to identify proteomic biomarkers associated with accelerated aging ------
+######### ------ Age gaps are strong predictors for adverse outcomes onset ------
+###### 2-1.compare Beta on aging-related phenotypes, age gap, UKB
+### the codes are as above
+
+###### 2-2.KM curve, UKB
+library(arrow)
+library(jsonlite)
+library(survival)
+library(survminer)
+library(survcomp)
+library(gridExtra)
+library(pROC)
+library(Hmisc)
+library(rms)
+library(hexbin)
+library(caret)
+library(scales)
+library(grid)
+library(ppcor)
+library(tidyverse)
+library(lubridate)
+library(svglite)
+###### prepare data, UKB
+dat_age <- read_csv("Data/Models/llama3_70b/llama3-70b-result_only_age.csv")
+dat_cov <- read_rds("Data/covariates_outcomes/panel_indicators.rds")
+dat_outcome <- read_rds("Data/covariates_outcomes/overall_aging_outcomes.rds")
+
+### merge data
+dat_age <- dat_age %>% inner_join(dat_cov, by = "eid")
+dat_age <- dat_age %>% inner_join(dat_outcome, by = "eid")
+
+# calculate age gap
+dat_age <- dat_age %>% mutate(llm_overall_acc = llm_overall_age - Age)
+dat_age <- dat_age %>% mutate(llm_cardiovascular_acc = llm_cardiovascular_age - Age)
+dat_age <- dat_age %>% mutate(llm_hepatic_acc = llm_hepatic_age - Age)
+dat_age <- dat_age %>% mutate(llm_pulmonary_acc = llm_pulmonary_age - Age)
+dat_age <- dat_age %>% mutate(llm_renal_acc = llm_renal_age - Age)
+dat_age <- dat_age %>% mutate(llm_metabolic_acc = llm_metabolic_age - Age)
+dat_age <- dat_age %>% mutate(llm_musculoskeletal_acc = llm_musculoskeletal_age - Age)
+dat_age <- na.omit(dat_age)
+
+# rank overall age gap
+dat_age <- dat_age[order(dat_age$llm_overall_acc), ]
+# calculate the boundaries of groups
+n <- nrow(dat_age)
+top_10_boundary <- n * 0.9
+median_10_boundary_low <- n * 0.45
+median_10_boundary_high <- n * 0.55
+# assign label
+dat_age$group <- "Other"
+dat_age$group[1:(n * 0.1)] <- "Bottom 10%"
+dat_age$group[(top_10_boundary+1):n] <- "Top 10%"
+dat_age$group[(median_10_boundary_low+1):median_10_boundary_high] <- "Median 10%"
+
+### disease
+disease <- c("All-cause death", "CHD", "Stroke", "COPD", 
+             "Liver diseases", "Renal failure", "T2D", "Arthritis")
+
+# plots
+plots <- list()
+
+for(i in 1:length(disease)) {
+  item <- disease[i]
+  item_diagnose <- paste0(item, " diagnose")
+  item_duration <- paste0(item, " duration")
+  dat_age$event <- dat_age[[item_diagnose]]
+  dat_age$time <- dat_age[[item_duration]]
+  
+  # data exclude
+  if (item == "CHD" | item == "Stroke") {
+    dat_cox <- subset(dat_age, `MACE duration` > 0)
+  }
+  else if (item == "Renal failure") {
+    dat_cox <- subset(dat_age, `Renal diseases duration` > 0)
+  }
+  else if (item == "T2D") {
+    dat_cox <- subset(dat_age, `Diabetes duration` > 0)
+  }
+  else {
+    dat_cox <- subset(dat_age, time > 0)
+  }
+  
+  dat_cox <- subset(dat_cox, group == "Bottom 10%" | group == "Top 10%" | group == "Median 10%")
+  
+  # km curve
+  fit <- survfit(Surv(time, event) ~ group, data = dat_cox)
+  
+  ggsurv <- ggsurvplot(fit,
+                       data = dat_cox,
+                       # pval = TRUE, 
+                       conf.int = TRUE,
+                       # risk.table = TRUE,
+                       fun = "event",
+                       xlab = "",
+                       ylab = "",
+                       xlim = c(0, 15),
+                       palette = c("#90D3C7", "#80B1D3", "#ca0020"),
+                       legend.title = "Overall age gap group",
+                       legend.labs = c("Bottom 10%", "Median 10%", "Top 10%"),
+                       legend = "bottom",
+                       title = item,
+                       ggtheme = theme_minimal())
+  
+  # other plot settings
+  ggsurv$plot <- ggsurv$plot + 
+    theme(panel.grid.minor = element_blank(),
+          panel.grid.major = element_blank(),
+          panel.border = element_blank(),
+          # plot.margin = margin(10, 10, 10, 10),
+          axis.line = element_line(),
+          axis.title = element_text(size = 22),
+          axis.text = element_text(size = 22, color = "black"),
+          legend.title = element_text(size = 22),
+          legend.text = element_text(size = 22),
+          plot.title = element_text(size = 24, hjust = 0.5, vjust = 2)) +
+    scale_x_continuous(breaks = c(5, 10)) + 
+    scale_y_continuous(labels = function(x) x * 100)
+  
+  plots[[i]] <- ggsurv$plot
+}
+
+# merge data plots
+combined_plot <- ggarrange(plotlist = plots, 
+                           ncol = 4, 
+                           nrow = 2,
+                           common.legend = TRUE, 
+                           legend = "bottom")
+
+# add axis
+combined_plot <- annotate_figure(combined_plot,
+                                 bottom = text_grob("Time (years)", size = 22),
+                                 left = text_grob("Cumulative event (%)", size = 22, rot = 90))
+
+ggsave("fig3b_age_gap_km.pdf", plot = combined_plot, width = 18, height = 9)
+
+
+
+###### 2-3.organ-specific age gaps, UKB
+Cox_analysis <- function(dat_baseline, disease_ls, var_ls) {
+  disease_name_ls <- c()
+  res_name_ls <- c()
+  hr_ls <- c()
+  conf_lower_ls <- c()
+  conf_upper_ls <- c()
+  pvalue_ls <- c()
+  
+  for (item in disease_ls) {
+    item_diagnose <- paste0(item, " diagnose")
+    item_duration <- paste0(item, " duration")
+    dat_baseline$event <- dat_baseline[[item_diagnose]]
+    dat_baseline$time <- dat_baseline[[item_duration]]
+    
+    # data exclude
+    dat_cox <- subset(dat_baseline,
+                      `MACE duration` > 0 &
+                      `Renal failure duration` > 0 &
+                      `T2D duration` > 0 &
+                      `COPD duration` > 0 &
+                      `Liver diseases duration` > 0 &
+                      `Arthritis duration` > 0)
+    
+    for (i in 1:length(var_ls)) {
+      var_name <- var_ls[i]
+      formula_covariates <- paste0("survobj ~ Age + Sex + Income + Employment + 
+                                    Education + UKB_assessment_center + Ethnicity +
+                                   Current_smoker + Daily_alcohol_intake +
+                                    BMI + Hypertension_history + ", var_name)
+      f <- as.formula(formula_covariates)
+      survobj <- with(dat_cox, Surv(time, event==1))
+      
+      cox_fit <- coxph(formula = f, data = dat_cox, na.action = na.omit)
+      
+      hr <- round(summary(cox_fit)$coefficients[var_name, "exp(coef)"], 3)
+      conf_interval <- exp(confint(cox_fit)[var_name, ])
+      conf_lower <- round(conf_interval[1], 3)
+      conf_upper <- round(conf_interval[2], 3)
+      p_value <- summary(cox_fit)$coefficients[var_name, "Pr(>|z|)"]
+      
+      disease_name_ls <- c(disease_name_ls, item)
+      res_name_ls <- c(res_name_ls, var_name)
+      hr_ls <- c(hr_ls, hr)
+      conf_lower_ls <- c(conf_lower_ls, conf_lower)
+      conf_upper_ls <- c(conf_upper_ls, conf_upper)
+      pvalue_ls <- c(pvalue_ls, p_value)
+      
+      print(paste0(item, ": ", var_name, " Over!"))
+    }
+  }
+  
+  res <- data.frame(disease = disease_name_ls,
+                    var = res_name_ls,
+                    HR = hr_ls,
+                    Lower = conf_lower_ls,
+                    Upper = conf_upper_ls,
+                    p_value = pvalue_ls)
+  return(res)
+}
+
+disease <- c("All-cause death", "CHD", "Stroke", "COPD", 
+             "Liver diseases", "Renal failure", "T2D", "Arthritis")
+
+# age gap
+var_ls <- c("llm_cardiovascular_acc", "llm_hepatic_acc", "llm_pulmonary_acc",
+            "llm_renal_acc", "llm_metabolic_acc", "llm_musculoskeletal_acc")
+
+age_results_hr <- Cox_analysis(dat_baseline = dat_age,
+                               disease_ls = disease,
+                               var_ls = var_ls)
+
+names(age_results_hr)[c(1, 2)] <- c("outcome", "var_name")
+age_results_hr <- age_results_hr %>%
+  mutate(var_name = case_when(
+    var_name == "llm_cardiovascular_acc" ~ "Cardiovascular",
+    var_name == "llm_hepatic_acc" ~ "Hepatic",
+    var_name == "llm_pulmonary_acc" ~ "Pulmonary",
+    var_name == "llm_renal_acc" ~ "Renal",
+    var_name == "llm_metabolic_acc" ~ "Metabolic",
+    var_name == "llm_musculoskeletal_acc" ~ "Musculoskeletal",
+  ))
+
+age_results_hr$var_name <- factor(age_results_hr$var_name, 
+                                  levels = c("Cardiovascular", 
+                                             "Hepatic", 
+                                             "Pulmonary", 
+                                             "Renal", 
+                                             "Metabolic", 
+                                             "Musculoskeletal"))
+
+library(scales)
+plots_HR <- list()
+
+for(i in 1:length(disease)) {
+  item <- disease[i]
+  dat_sub <- subset(age_results_hr, outcome == item)
+  
+  p <- ggplot(dat_sub, aes(x = var_name, y = HR, color = var_name)) +
+    geom_point(size = 5) +
+    geom_errorbar(aes(ymin = Lower, ymax = Upper), width = 0.2) +
+    geom_segment(aes(x = 0, xend = var_name, y = HR, yend = HR),
+                 linetype = "dashed",
+                 data = subset(dat_sub, var_name %in% c(
+                   "Cardiovascular",
+                   "Hepatic",
+                   "Pulmonary",
+                   "Renal",
+                   "Metabolic",
+                   "Musculoskeletal"))) +
+    scale_color_manual(values = c(
+      "#E71D1D",
+      "#4BB04A",
+      "#FF7D01",
+      "#F980BE",
+      "#A35628",
+      "#9850A6")) +
+    theme_minimal() +
+    labs(title = item,
+         y = "",
+         x = "") +
+    theme(panel.grid.minor = element_blank(),
+          panel.grid.major = element_blank(),
+          panel.border = element_blank(),
+          axis.line = element_line(),
+          axis.title = element_text(size = 22),
+          axis.text.x = element_text(angle = 90, size = 22, color = "black", hjust = 1, vjust = 0.5),
+          axis.text.y = element_text(size = 22, color = "black"),
+          axis.ticks = element_line(color = "black"),
+          legend.position = "none",
+          plot.title = element_text(size = 24, hjust = 0.5, vjust = 2)) +
+    scale_y_continuous(limits = c(min(dat_sub$Lower) - 0.01, max(dat_sub$Upper) + 0.01), 
+                       labels = scales::number_format(accuracy = 0.01))
+  
+  if (i < 5) {
+    p <- p + theme(axis.text.x = element_blank(),
+                   axis.title.x = element_blank(),
+                   axis.ticks.x = element_blank(),
+                   axis.line.x = element_blank())
+  }
+  plots_HR[[i]] <- p
+}
+
+arranged_plots <- ggarrange(plotlist = plots_HR, 
+                            ncol = 4, 
+                            nrow = 2,
+                            heights = c(1, 1.8))
+
+# arranged_plots
+combined_plot <- annotate_figure(arranged_plots,
+                                 left = text_grob("Adjusted hazard ratio (HR)", 
+                                                  size = 22, rot = 90))
+
+ggsave("fig3c_acc_hr.pdf", plot = combined_plot, width = 18, height = 9)
+
+
+
+###### 2-4.organ-overall age gaps, UKB
+dat_age <- dat_age %>%
+  dplyr::mutate(cardiovascular_overall_acc = llm_cardiovascular_age - llm_overall_age) %>%
+  dplyr::mutate(hepatic_overall_acc = llm_hepatic_acc - llm_overall_age) %>%
+  dplyr::mutate(pulmonary_overall_acc = llm_pulmonary_acc - llm_overall_age) %>%
+  dplyr::mutate(renal_overall_acc = llm_renal_acc - llm_overall_age) %>%
+  dplyr::mutate(metabolic_overall_acc = llm_metabolic_acc - llm_overall_age) %>%
+  dplyr::mutate(musculoskeletal_overall_acc = llm_musculoskeletal_acc - llm_overall_age)
+
+# disease
+disease <- c("All-cause death", "CHD", "Stroke", "COPD", 
+             "Liver diseases", "Renal failure", "T2D", "Arthritis")
+
+# organ-overall age gap
+var_ls <- c("cardiovascular_overall_acc", "hepatic_overall_acc",
+            "pulmonary_overall_acc", "renal_overall_acc",
+            "metabolic_overall_acc", "musculoskeletal_overall_acc")
+
+age_results_hr <- Cox_analysis(dat_baseline = dat_age,
+                               disease_ls = disease,
+                               var_ls = var_ls)
+
+names(age_results_hr)[c(1, 2)] <- c("outcome", "var_name")
+age_results_hr <- age_results_hr %>%
+  mutate(var_name = case_when(
+    var_name == "cardiovascular_overall_acc" ~ "CV-Overall",
+    var_name == "hepatic_overall_acc" ~ "Hep-Overall",
+    var_name == "pulmonary_overall_acc" ~ "Pulm-Overall",
+    var_name == "renal_overall_acc" ~ "Ren-Overall",
+    var_name == "metabolic_overall_acc" ~ "Met-Overall",
+    var_name == "musculoskeletal_overall_acc" ~ "MSK-Overall"
+  ))
+
+age_results_hr$var_name <- factor(age_results_hr$var_name, 
+                                  levels = c("CV-Overall",
+                                             "Hep-Overall",
+                                             "Pulm-Overall",
+                                             "Ren-Overall",
+                                             "Met-Overall",
+                                             "MSK-Overall"))
+
+library(scales)
+plots_HR <- list()
+
+for(i in 1:length(disease)) {
+  item <- disease[i]
+  dat_sub <- subset(age_results_hr, outcome == item)
+  
+  p <- ggplot(dat_sub, aes(x = var_name, y = HR, color = var_name)) +
+    geom_point(size = 5) +
+    geom_errorbar(aes(ymin = Lower, ymax = Upper), width = 0.2) +
+    geom_segment(aes(x = 0, xend = var_name, y = HR, yend = HR),
+                 linetype = "dashed",
+                 data = subset(dat_sub, var_name %in% c("CV-Overall",
+                                                        "Hep-Overall",
+                                                        "Pulm-Overall",
+                                                        "Ren-Overall",
+                                                        "Met-Overall",
+                                                        "MSK-Overall"))) +
+    scale_color_manual(values = c(
+      "#E71D1D",
+      "#4BB04A",
+      "#FF7D01",
+      "#F980BE",
+      "#A35628",
+      "#9850A6")) +
+    theme_minimal() +
+    labs(title = item,
+         y = "",
+         x = "") +
+    theme(panel.grid.minor = element_blank(),
+          panel.grid.major = element_blank(),
+          panel.border = element_blank(),
+          axis.line = element_line(),
+          axis.title = element_text(size = 22),
+          axis.text.x = element_text(angle = 90, size = 22, color = "black", hjust = 1, vjust = 0.5),
+          axis.text.y = element_text(size = 22, color = "black"),
+          axis.ticks = element_line(color = "black"),
+          legend.position = "none",
+          plot.title = element_text(size = 24, hjust = 0.5, vjust = 2)) +
+    scale_y_continuous(limits = c(min(dat_sub$Lower) - 0.01, max(dat_sub$Upper) + 0.01), 
+                       labels = scales::number_format(accuracy = 0.01))
+  
+  if (i < 5) {
+    p <- p + theme(axis.text.x = element_blank(),
+                   axis.title.x = element_blank(),
+                   axis.ticks.x = element_blank(),
+                   axis.line.x = element_blank())
+  }
+  plots_HR[[i]] <- p
+}
+
+arranged_plots <- ggarrange(plotlist = plots_HR, 
+                            ncol = 4, 
+                            nrow = 2,
+                            heights = c(1, 1.8))
+
+# arranged_plots
+combined_plot <- annotate_figure(arranged_plots,
+                                 left = text_grob("Adjusted hazard ratio (HR)", 
+                                                  size = 22, rot = 90))
+
+ggsave("fig3d_organ_overall_acc_hr.pdf", plot = combined_plot, width = 18, height = 8)
+
+
+
+
+######### ------ Comparing performance of different LLMs ------
+dat_age_llama3_70b <- read.csv("Data/Models/llama3_70b/llama3-70b-result_only_age.csv")
+dat_age_llama3_70b <- dplyr::select(dat_age_llama3_70b, 1, 2)
+names(dat_age_llama3_70b)[2] <- "llama3-70b biological age"
+dat_age_llama3_70b$`llama3-70b biological age` <- as.numeric(dat_age_llama3_70b$`llama3-70b biological age`)
+dat_age_llama3_70b <- na.omit(dat_age_llama3_70b)
+
+dat_age_llama3_8b <- read.csv("Data/Models/llama3_8b/llama3-8b-result_only_age.csv")
+dat_age_llama3_8b <- dplyr::select(dat_age_llama3_8b, 1, 2)
+names(dat_age_llama3_8b)[2] <- "llama3-8b biological age"
+dat_age_llama3_8b$`llama3-8b biological age` <- as.numeric(dat_age_llama3_8b$`llama3-8b biological age`)
+dat_age_llama3_8b <- na.omit(dat_age_llama3_8b)
+
+dat_age_qwen1.5_14b <- read.csv("Data/Models/qwen1.5_14b/qwen1.5-14b-result_only_age.csv")
+dat_age_qwen1.5_14b <- dplyr::select(dat_age_qwen1.5_14b, 1, 2)
+names(dat_age_qwen1.5_14b)[2] <- "qwen1.5-14b biological age"
+dat_age_qwen1.5_14b$`qwen1.5-14b biological age` <- as.numeric(dat_age_qwen1.5_14b$`qwen1.5-14b biological age`)
+dat_age_qwen1.5_14b <- na.omit(dat_age_qwen1.5_14b)
+
+dat_age_qwen1.5_32b <- read.csv("Data/Models/qwen1.5_32b/qwen1.5-32b-result_only_age.csv")
+dat_age_qwen1.5_32b <- dplyr::select(dat_age_qwen1.5_32b, 1, 2)
+names(dat_age_qwen1.5_32b)[2] <- "qwen1.5-32b biological age"
+dat_age_qwen1.5_32b$`qwen1.5-32b biological age` <- as.numeric(dat_age_qwen1.5_32b$`qwen1.5-32b biological age`)
+dat_age_qwen1.5_32b <- na.omit(dat_age_qwen1.5_32b)
+
+dat_age_qwen1.5_72b <- read.csv("Data/Models/qwen1.5_72b/qwen1.5-72b-result_only_age.csv")
+dat_age_qwen1.5_72b <- dplyr::select(dat_age_qwen1.5_72b, 1, 2)
+names(dat_age_qwen1.5_72b)[2] <- "qwen1.5-72b biological age"
+dat_age_qwen1.5_72b$`qwen1.5-72b biological age` <- as.numeric(dat_age_qwen1.5_72b$`qwen1.5-72b biological age`)
+dat_age_qwen1.5_72b <- na.omit(dat_age_qwen1.5_72b)
+
+dat_age_qwen1.5_110b <- read.csv("Data/Models/qwen1.5_110b/qwen1.5-110b-result_only_age.csv")
+dat_age_qwen1.5_110b <- dplyr::select(dat_age_qwen1.5_110b, 1, 2)
+names(dat_age_qwen1.5_110b)[2] <- "qwen1.5-110b biological age"
+dat_age_qwen1.5_110b$`qwen1.5-110b biological age` <- as.numeric(dat_age_qwen1.5_110b$`qwen1.5-110b biological age`)
+dat_age_qwen1.5_110b <- na.omit(dat_age_qwen1.5_110b)
+
+dat_age_qwen2_7b <- read.csv("Data/Models/qwen2_7b/qwen2-7b-result_only_age.csv")
+dat_age_qwen2_7b <- dplyr::select(dat_age_qwen2_7b, 1, 2)
+names(dat_age_qwen2_7b)[2] <- "qwen2-7b biological age"
+dat_age_qwen2_7b$`qwen2-7b biological age` <- as.numeric(dat_age_qwen2_7b$`qwen2-7b biological age`)
+dat_age_qwen2_7b <- na.omit(dat_age_qwen2_7b)
+
+dat_age_qwen2_72b <- read.csv("Data/Models/qwen2_72b/qwen2-72b-result_only_age.csv")
+dat_age_qwen2_72b <- dplyr::select(dat_age_qwen2_72b, 1, 2)
+names(dat_age_qwen2_72b)[2] <- "qwen2-72b biological age"
+dat_age_qwen2_72b$`qwen2-72b biological age` <- as.numeric(dat_age_qwen2_72b$`qwen2-72b biological age`)
+dat_age_qwen2_72b <- na.omit(dat_age_qwen2_72b)
+
+dat_age <- dat_age_llama3_8b %>%
+  inner_join(dat_age_llama3_70b, by = "eid") %>%
+  inner_join(dat_age_qwen1.5_14b, by = "eid") %>%
+  inner_join(dat_age_qwen1.5_32b, by = "eid") %>%
+  inner_join(dat_age_qwen1.5_72b, by = "eid") %>%
+  inner_join(dat_age_qwen1.5_110b, by = "eid") %>%
+  inner_join(dat_age_qwen2_7b, by = "eid") %>%
+  inner_join(dat_age_qwen2_72b, by = "eid")
+
+dat_cov <- read_rds("Data/covariates_outcomes/panel_indicators.rds")
+dat_outcome <- read_rds("Data/covariates_outcomes/overall_aging_outcomes.rds")
+
+### merge data
+dat_age <- dat_age %>% inner_join(dat_cov, by = "eid")
+dat_age <- dat_age %>% inner_join(dat_outcome, by = "eid")
+
+# disease
+disease <- c("All-cause death", "CHD", "Stroke", "COPD", 
+             "Liver diseases", "Renal failure", "T2D", "Arthritis")
+
+### test data
+dat_svm <- read_csv("Data/Models/svm_res/test_svm_overall_res_250105.csv")
+dat_svm <- dplyr::select(dat_svm, 1)
+dat_age <- dat_age %>% inner_join(dat_svm, by = "eid")
+
+# different llms
+var_ls <- c("`llama3-8b biological age`", 
+            "`llama3-70b biological age`", 
+            "`qwen1.5-14b biological age`",
+            "`qwen1.5-32b biological age`", 
+            "`qwen1.5-72b biological age`",
+            "`qwen1.5-110b biological age`",
+            "`qwen2-7b biological age`",
+            "`qwen2-72b biological age`")
+
+var_mean_c_index <- c()
+var_mean_c_index_lower <- c()
+var_mean_c_index_upper <- c()
+outcome_ls <- c()
+
+# run
+set.seed(2024)
+for(i in 1:length(disease)) {
+  item <- disease[i]
+  item_diagnose <- paste0(item, " diagnose")
+  item_duration <- paste0(item, " duration")
+  dat_age$event <- dat_age[[item_diagnose]]
+  dat_age$time <- dat_age[[item_duration]]
+  
+  # exclude data
+  if (item == "CHD" | item == "Stroke") {
+    dat_cox <- subset(dat_age, `MACE duration` > 0)
+  }
+  else if (item == "Renal failure") {
+    dat_cox <- subset(dat_age, `Renal diseases duration` > 0)
+  }
+  else if (item == "T2D") {
+    dat_cox <- subset(dat_age, `Diabetes duration` > 0)
+  }
+  else {
+    dat_cox <- subset(dat_age, time > 0) 
+  }
+
+  folds <- createFolds(dat_cox$event, k = 3)
+  for (i in 1:length(var_ls)) {
+    var <- var_ls[i]
+    c_index_values <- c()
+    c_index_lower_ls <- c()
+    c_index_upper_ls <- c()
+    
+    for(j in 1:3) {
+      # train and test split
+      test_indices <- folds[[j]]
+      train_data <- dat_cox[-test_indices, ]
+      test_data <- dat_cox[test_indices, ]
+      
+      # Cox models
+      formula_covariates <- paste0("survobj ~ ", var)
+      f <- as.formula(formula_covariates)
+      survobj <- with(train_data, Surv(time, event))
+      cox_fit <- coxph(formula = f, data = train_data, na.action = na.omit)
+      
+      # predict risk
+      test_data$predicted_risk <- predict(cox_fit, newdata = test_data, 
+                                          type = "risk")
+      
+      # calculate c-index
+      concordance_result <- concordance.index(x = test_data$predicted_risk,
+                                              surv.time = test_data$time,
+                                              surv.event = test_data$event)
+      c_index <- concordance_result$c.index
+      c_index_lower <- concordance_result$lower
+      c_index_upper <- concordance_result$upper
+      # 存储c-index
+      c_index_values <- c(c_index_values, c_index)
+      c_index_lower_ls <- c(c_index_lower_ls, c_index_lower)
+      c_index_upper_ls <- c(c_index_upper_ls, c_index_upper)
+      print(paste0(item, " ------------ ", var, " ------------ fold ", j))
+    }
+    mean_c_index <- round(mean(c_index_values), digits = 3)
+    mean_c_index_lower <- round(mean(c_index_lower_ls), digits = 3)
+    mean_c_index_upper <- round(mean(c_index_upper_ls), digits = 3)
+    
+    var_mean_c_index <- c(var_mean_c_index, mean_c_index)
+    var_mean_c_index_lower <- c(var_mean_c_index_lower, mean_c_index_lower)
+    var_mean_c_index_upper <- c(var_mean_c_index_upper, mean_c_index_upper)
+    outcome_ls <- c(outcome_ls, item)
+  }
+}
+
+dat_plot <- data.frame(
+  outcome = outcome_ls,
+  var_name = var_ls,
+  c_index = var_mean_c_index,
+  c_index_lower = var_mean_c_index_lower,
+  c_index_upper = var_mean_c_index_upper
+)
+
+dat_plot <- dat_plot %>%
+  mutate(var_name = case_when(
+    var_name == "`llama3-8b biological age`" ~ "Llama3-8b",
+    var_name == "`llama3-70b biological age`" ~ "Llama3-70b",
+    var_name == "`qwen1.5-14b biological age`" ~ "Qwen1.5-14b",
+    var_name == "`qwen1.5-32b biological age`" ~ "Qwen1.5-32b",
+    var_name == "`qwen1.5-72b biological age`" ~ "Qwen1.5-72b",
+    var_name == "`qwen1.5-110b biological age`" ~ "Qwen1.5-110b",
+    var_name == "`qwen2-7b biological age`" ~ "Qwen2-7b",
+    var_name == "`qwen2-72b biological age`" ~ "Qwen2-72b"
+  ))
+
+dat_plot$var_name <- factor(dat_plot$var_name, 
+                            levels = c("Llama3-8b", 
+                                       "Llama3-70b", 
+                                       "Qwen1.5-14b", 
+                                       "Qwen1.5-32b",
+                                       "Qwen1.5-72b", 
+                                       "Qwen1.5-110b",
+                                       "Qwen2-7b", 
+                                       "Qwen2-72b"))
+
+### plots
+plots_c_index <- list()
+
+for(i in 1:length(disease)) {
+  item <- disease[i]
+  dat_sub <- subset(dat_plot, outcome == item)
+  p <- ggplot(dat_sub, aes(x = var_name, y = c_index, color = var_name)) +
+    geom_point(size = 5) +
+    geom_errorbar(aes(ymin = c_index_lower, ymax = c_index_upper), width = 0.2) +
+    geom_segment(aes(x = 0, xend = var_name, y = c_index, yend = c_index),
+                 linetype = "dashed",
+                 data = subset(dat_sub, var_name %in% c("Llama3-8b", 
+                                                        "Llama3-70b", 
+                                                        "Qwen1.5-14b", 
+                                                        "Qwen1.5-32b",
+                                                        "Qwen1.5-72b", 
+                                                        "Qwen1.5-110b",
+                                                        "Qwen2-7b", 
+                                                        "Qwen2-72b"))) +
+    scale_color_manual(values = c("#4480B3", "#4480B3", 
+                                  "#fdae6b", "#fdae6b", "#fdae6b", "#fdae6b",
+                                  "#31a354", "#31a354")) +
+    theme_minimal() +
+    labs(title = item,
+         y = "",
+         x = "") +
+    theme(panel.grid.minor = element_blank(),
+          panel.grid.major = element_blank(),
+          panel.border = element_blank(),
+          axis.line = element_line(),
+          axis.title = element_text(size = 22),
+          axis.text.x = element_text(angle = 90, size = 22, color = "black", hjust = 1, vjust = 0.5),
+          axis.text.y = element_text(size = 22, color = "black"),
+          axis.ticks = element_line(color = "black"),
+          legend.position = "none",
+          plot.title = element_text(size = 24, hjust = 0.5, vjust = 2)) +
+    scale_y_continuous(labels = number_format(accuracy = 0.01))
+  
+  if (i < 5) {
+    p <- p + theme(axis.text.x = element_blank(),
+                   axis.title.x = element_blank(),
+                   axis.ticks.x = element_blank(),
+                   axis.line.x = element_blank())
+  }
+  plots_c_index[[i]] <- p
+}
+
+arranged_plots <- ggarrange(plotlist = plots_c_index, 
+                            ncol = 4, 
+                            nrow = 2,
+                            heights = c(1, 1.7))
+
+# arranged_plots
+combined_plot <- annotate_figure(arranged_plots,
+                                 left = text_grob("Absolute C-index", 
+                                                  size = 22, rot = 90))
+
+ggsave("fig4c_different_llms.pdf", plot = combined_plot, width = 20, height = 9)
+
+
+
+
+######### ------ Identify proteomic biomarkers associated with accelerated aging ------
 ### 4-1. Load required libraries
 library(tidyverse)
 library(lubridate)
@@ -3007,5 +3657,562 @@ analyze_protein("T2D", "PhenoAge_overlap", "CV_T2D_Phe.csv",
                 allcause, allprotein, dat_age)
 
 message("All analyses completed.", Sys.time())
+
+
+
+######### ------ Model interpretation ------
+###### 1.shap
+# install.packages("iml")
+library(iml)
+library(MASS)
+library(caret)
+
+dat_age <- read_csv("Data/Models/llama3_70b_interpretation/llama3-70B-shap-analyisis.csv")
+dat_age <- dplyr::select(dat_age, 1, 4)
+dat_cov <- read_rds("Data/covariates_outcomes/panel_indicators.rds")
+dat_age <- dat_age %>% inner_join(dat_cov, by = "eid")
+dat_age$llm_overall_acc <- dat_age$llm_overall_age - dat_age$Age
+
+dat_age <- dat_age %>%
+  dplyr::mutate(Current_smoker = case_when(
+    Current_smoker == 1 ~ "yes",
+    TRUE ~ "no"
+  )) %>%
+  dplyr::mutate(Daily_alcohol_intake = case_when(
+    Daily_alcohol_intake == 1 ~ "yes",
+    TRUE ~ "no"
+  )) %>%
+  dplyr::mutate(Daily_healthy_food = case_when(
+    Daily_healthy_food == 1 ~ "yes",
+    TRUE ~ "no"
+  )) %>%
+  dplyr::mutate(Frequently_processed_meat = case_when(
+    Frequently_processed_meat == 1 ~ "yes",
+    TRUE ~ "no"
+  )) %>%
+  dplyr::mutate(Frequently_red_meat = case_when(
+    Frequently_red_meat == 1 ~ "yes",
+    TRUE ~ "no"
+  )) %>%
+  dplyr::mutate(Frequently_salt_intake = case_when(
+    Frequently_salt_intake == 1 ~ "yes",
+    TRUE ~ "no"
+  )) %>%
+  dplyr::mutate(Family_cardiovascular_disease_history = case_when(
+    Family_cardiovascular_disease_history == 1 ~ "yes",
+    TRUE ~ "no"
+  )) %>%
+  dplyr::mutate(Family_diabetes_history = case_when(
+    Family_diabetes_history == 1 ~ "yes",
+    TRUE ~ "no"
+  )) %>%
+  dplyr::mutate(Hypertension_history = case_when(
+    Hypertension_history == 1 ~ "yes",
+    TRUE ~ "no"
+  )) %>%
+  dplyr::mutate(Diabetes_history = case_when(
+    Diabetes_history == 1 ~ "yes",
+    TRUE ~ "no"
+  )) %>%
+  dplyr::mutate(Hypotensive_drugs = case_when(
+    Hypotensive_drugs == 1 ~ "yes",
+    TRUE ~ "no"
+  )) %>%
+  dplyr::mutate(Insulin = case_when(
+    Insulin == 1 ~ "yes",
+    TRUE ~ "no"
+  ))
+
+dat_age$Current_smoker <- factor(dat_age$Current_smoker)
+dat_age$Daily_alcohol_intake <- factor(dat_age$Daily_alcohol_intake)
+dat_age$Daily_healthy_food <- factor(dat_age$Daily_healthy_food)
+dat_age$Frequently_processed_meat <- factor(dat_age$Frequently_processed_meat)
+dat_age$Frequently_red_meat <- factor(dat_age$Frequently_red_meat)
+dat_age$Frequently_salt_intake <- factor(dat_age$Frequently_salt_intake)
+dat_age$Family_cardiovascular_disease_history <- factor(dat_age$Family_cardiovascular_disease_history)
+dat_age$Family_diabetes_history <- factor(dat_age$Family_diabetes_history)
+dat_age$Hypertension_history <- factor(dat_age$Hypertension_history)
+dat_age$Diabetes_history <- factor(dat_age$Diabetes_history)
+dat_age$Hypotensive_drugs <- factor(dat_age$Hypotensive_drugs)
+dat_age$Insulin <- factor(dat_age$Insulin)
+
+# linear model
+dat_age_shap <- dplyr::select(dat_age, 3:48)
+old_names <- colnames(dat_age_shap)
+old_names <- gsub(" \\(HbA1c\\)| \\(erythrocyte\\)| \\(leukocyte\\)", "", old_names)
+old_names <- gsub(" |-", "_", old_names)
+names(dat_age_shap) <- old_names
+
+# fit linear model
+model <- lm(llm_overall_acc ~ ., data = dat_age_shap)
+
+# predict function
+predict_function <- function(model, newdata) {
+  predict(model, newdata)
+}
+
+# predictor
+predictor <- Predictor$new(
+  model = model, 
+  data = dat_age_shap[ , -46],
+  y = dat_age_shap$llm_overall_acc, 
+  predict.function = predict_function
+)
+
+### 1.individual analysis
+# individual shap analysis
+shapley <- Shapley$new(predictor, x.interest = dat_age_shap[1, -46])
+shap_values <- shapley$results
+
+shap_values_df <- data.frame(
+  feature = shap_values$feature.value,
+  shap_value = shap_values$phi
+)
+
+old_feature <- shap_values_df$feature
+old_feature <- gsub("_", " ", old_feature)
+old_feature <- gsub("=", " = ", old_feature)
+shap_values_df$feature <- old_feature
+
+# rename variable
+shap_values_df$feature <- gsub("Daily moderate to vigorous physical activity",
+                               "Daily MVPA",
+                               shap_values_df$feature)
+shap_values_df$feature <- gsub("Family cardiovascular disease history",
+                               "Family CVD history",
+                               shap_values_df$feature)
+shap_values_df$feature <- gsub("Mean corpuscular haemoglobin concentration",
+                               "MCHC",
+                               shap_values_df$feature)
+
+# bar plot
+p <- ggplot(shap_values_df, 
+            aes(x = reorder(feature, shap_value), 
+                y = shap_value, fill = shap_value)) +
+  geom_bar(stat = "identity") +
+  coord_flip() +
+  scale_fill_gradient(low = "#92a8d1", high = "#c94c4c") +
+  labs(title = "SHAP values for a single participant",
+       x = "Features",
+       y = "SHAP value") +
+  theme_minimal() +
+  theme(panel.border = element_blank(),
+        axis.line = element_line(),
+        axis.title = element_text(size = 22),
+        axis.text.x = element_text(size = 22, color = "black"),
+        axis.text.y = element_text(size = 22, color = "black"),
+        axis.ticks = element_line(color = "black"),
+        legend.position = "none",
+        plot.title = element_text(size = 26, hjust = 0, vjust = 2))
+
+ggsave("fig6c_shap_individual.pdf", p, width = 12, height = 12)
+
+
+### 2.global analysis
+feature_imp <- FeatureImp$new(predictor, loss = "mae")
+feature_imp_df <- feature_imp$results
+
+old_feature <- feature_imp_df$feature
+old_feature <- gsub("_", " ", old_feature)
+feature_imp_df$feature <- old_feature
+
+# rename variable
+feature_imp_df$feature <- gsub("Daily moderate to vigorous physical activity",
+                               "Daily MVPA",
+                               feature_imp_df$feature)
+feature_imp_df$feature <- gsub("Family cardiovascular disease history",
+                               "Family CVD history",
+                               feature_imp_df$feature)
+feature_imp_df$feature <- gsub("Mean corpuscular haemoglobin concentration",
+                               "MCHC",
+                               feature_imp_df$feature)
+
+# dot plot
+p <- ggplot(feature_imp_df, aes(x = reorder(feature, importance), 
+                                y = importance)) +
+  geom_point(size = 5, color = "#e6550d") + 
+  coord_flip() +
+  labs(title = "Feature importance based on SHAP values",
+       x = "Features",
+       y = "Importance (MAE)") +
+  theme_minimal() +
+  theme(
+    panel.border = element_blank(),
+    axis.line = element_line(),
+    axis.title = element_text(size = 22),
+    axis.text.x = element_text(size = 22, color = "black"),
+    axis.text.y = element_text(size = 22, color = "black"),
+    axis.ticks = element_line(color = "black"),
+    legend.position = "none",
+    plot.title = element_text(size = 26, hjust = 0, vjust = 2)
+  )
+
+ggsave("fig6d_shap_global.pdf", p, width = 12, height = 12)
+
+
+
+###### 3.global surrogate model
+dat_age <- dplyr::select(dat_age, 2:48)
+old_names <- colnames(dat_age)
+old_names <- gsub(" \\(HbA1c\\)| \\(erythrocyte\\)| \\(leukocyte\\)", "", old_names)
+old_names <- gsub(" |-", "_", old_names)
+names(dat_age) <- old_names
+
+names(dat_age)[c(11,12,45)] <- c("Daily_MVPA", "Family_CVD_history", "MCHC")
+dat_age$llm_overall_acc <- NULL
+
+### construct linear model as global surrogate model
+lm_model <- lm(
+  formula = as.formula(paste("llm_overall_age", "~ .")),
+  data = dat_age
+)
+summary(lm_model)
+# beta
+conf_interval <- confint(lm_model, level = 0.95)
+
+lm_summary <- summary(lm_model)
+coef_info <- as.data.frame(coef(lm_summary))
+coef_info$feature <- rownames(coef_info)
+colnames(coef_info) <- c("coefficient", "std_error", "t_value", "p_value", 
+                         "feature")
+
+# p value
+coef_info <- coef_info %>%
+  mutate(significance = case_when(
+    p_value < 0.001 ~ "***",
+    p_value < 0.01  ~ "**",
+    p_value < 0.05  ~ "*",
+    TRUE            ~ ""
+  ))
+
+coef_info <- coef_info %>%
+  filter(feature != "(Intercept)")
+
+# color
+coef_info$color <- ifelse(coef_info$coefficient > 0, "#92a8d1", "#c94c4c")
+
+old_feature <- coef_info$feature
+old_feature <- gsub("_", " ", old_feature)
+old_feature[2] <- "Sex (male)"
+old_feature[3] <- "Education (below undergraduate)"
+old_feature[4] <- "Education (college)"
+old_feature[5] <- "Current smoker (yes)"
+old_feature[6] <- "Daily alcohol intake (yes)"
+old_feature[7] <- "Daily healthy food (yes)"
+old_feature[8] <- "Frequently processed meat (yes)"
+old_feature[9] <- "Frequently red meat (yes)"
+old_feature[10] <- "Frequently salt intake (yes)"
+old_feature[12] <- "Family CVD history (yes)"
+old_feature[13] <- "Family diabetes history (yes)"
+old_feature[14] <- "Hypertension history (yes)"
+old_feature[15] <- "Diabetes history (yes)"
+old_feature[16] <- "Hypotensive drugs (yes)"
+old_feature[17] <- "Insulin (yes)"
+
+coef_info$feature <- old_feature
+
+# bar plot
+p <- ggplot(coef_info, aes(x = reorder(feature, coefficient), 
+                           y = coefficient, 
+                           fill = color)) +
+  geom_bar(stat = "identity") +
+  geom_text(aes(
+    label = paste(round(coefficient, 3), significance), 
+    x = feature, 
+    y = coefficient, 
+    hjust = ifelse(coefficient > 0, -0.2, 1.2)
+  ), size = 6, color = "black") + 
+  scale_fill_identity() + 
+  coord_flip() +
+  labs(title = "Global surrogate model (Linear model)",
+       x = "Features",
+       y = "Regression coefficient") +
+  theme_minimal() +
+  theme(panel.border = element_blank(),
+        axis.line = element_line(),
+        axis.title = element_text(size = 20),
+        axis.text.x = element_text(size = 20, color = "black"),
+        axis.text.y = element_text(size = 20, color = "black"),
+        axis.ticks = element_line(color = "black"),
+        legend.position = "none",
+        plot.title = element_text(size = 24, hjust = 0, vjust = 2)
+  ) +
+  scale_y_continuous(expand = expansion(mult = c(0.2, 0.2)))
+
+ggsave("fig6e_global_surrogate_model.pdf", p, width = 13, height = 12)
+
+
+
+###### 4.counterfactual simulation
+# install.packages("effsize")
+library(effsize)
+dat_analysis <- read_csv("Data/Models/llama3_70b_interpretation/llama3-70B-counterfactual-analyisis.csv")
+dat_analysis <- dplyr::select(dat_analysis, 1, 4)
+names(dat_analysis)[2] <- "old_BA"
+dat_cov <- read_rds("Data/covariates_outcomes/panel_indicators.rds")
+dat_telomere <- read_csv("Data/covariates_outcomes/telomere.csv")
+dat_telomere <- select(dat_telomere, 1:2, 5)
+names(dat_telomere)[c(2, 3)] <- c("telomere_adjusted", "z_adjusted_telomere")
+dat_telomere <- na.omit(dat_telomere)
+dat_analysis <- dat_analysis %>% inner_join(dat_cov, by = "eid")
+dat_analysis$acc <- dat_analysis$old_BA - dat_analysis$Age
+dat_analysis <- dat_analysis %>% inner_join(dat_telomere, by = "eid")
+
+### Traverse the folder
+folder_path <- "Data/Models/llama3_70b_interpretation/perturbation"
+file_names <- list.files(folder_path, full.names = FALSE)
+file_names <- gsub(".csv", "", file_names)
+
+file_ls <- c()
+var_ls <- c()
+cohen_d_estimate_ls <- c()
+cohen_d_lower_ls <- c()
+cohen_d_upper_ls <- c()
+cohen_d_p_ls <- c()
+beta_ls <- c()
+beta_lower_ls <- c()
+beta_upper_ls <- c()
+beta_p_ls <- c()
+
+for (file in file_names) {
+  file_path <- paste0(folder_path, "/", file, ".csv")
+  dat_var <- read_csv(file_path)
+  dat_var <- dplyr::select(dat_var, 1, 4) # after perturbation
+  names(dat_var)[2] <- "perturbation_BA" # perturbation BA
+  dat_cov_cohen <- dplyr::select(dat_cov, 1, 2)
+  dat_var <- dat_var %>% inner_join(dat_cov_cohen, by = "eid")
+  
+  ### Cohen's d
+  dat_var$perturbation_acc <- dat_var$perturbation_BA - dat_var$Age
+  dat_var <- dplyr::select(dat_var, 1, 4)
+  # merge dat_analysis
+  dat_var_cohen <- dat_var
+  dat_var_cohen <- dat_var_cohen %>% inner_join(dat_analysis, by = "eid")
+  # calculate
+  cohen_d <- cohen.d(dat_var_cohen$perturbation_acc, 
+                     dat_var_cohen$acc, 
+                     paired = TRUE)
+  cohen_d_estimate <- round(cohen_d$estimate, 3)
+  cohen_d_lower <- round(cohen_d$conf.int["lower"], 3)
+  cohen_d_upper <- round(cohen_d$conf.int["upper"], 3)
+  t_test_result <- t.test(dat_var_cohen$perturbation_acc, 
+                          dat_var_cohen$acc, 
+                          paired = TRUE)
+  cohen_d_p <- t_test_result$p.value
+  
+  ###### regression 
+  dat_linear <- dat_analysis %>% semi_join(dat_var, by = "eid")
+  dat_linear$group <- "old_var"
+  dat_linear <- dplyr::select(dat_linear, 1, 50, 53)
+  # perturbation data
+  dat_var_linear <- dat_var
+  names(dat_var_linear)[2] <- "acc"
+  dat_var_linear$group <- "new_var"
+  # merge
+  dat_linear <- rbind(dat_linear, dat_var_linear)
+  dat_linear$group <- factor(dat_linear$group, levels = c("old_var", "new_var"))
+  dat_linear <- dat_linear %>% inner_join(dat_cov, by = "eid")
+  model <- lm(acc ~ group + Age + Sex + Income + Employment + Education, dat_linear)
+  # extract results
+  beta <- round(model$coefficients["groupnew_var"], 3)
+  beta_lower <- round(confint(model)["groupnew_var","2.5 %"], 3)
+  beta_upper <- round(confint(model)["groupnew_var","97.5 %"], 3)
+  beta_p <- summary(model)$coefficients["groupnew_var","Pr(>|t|)"]
+  
+  var_name <- gsub("dat_|_yes_2_no|_no_2_yes", "", file)
+  # p value
+  cohen_d_p <- ifelse(cohen_d_p < 0.001, "<0.001", as.character(round(cohen_d_p, 3)))
+  beta_p <- ifelse(beta_p < 0.001, "<0.001", as.character(round(beta_p, 3)))
+  
+  file_ls <- c(file_ls, file)
+  var_ls <- c(var_ls, var_name)
+  cohen_d_estimate_ls <- c(cohen_d_estimate_ls, cohen_d_estimate)
+  cohen_d_lower_ls <- c(cohen_d_lower_ls, cohen_d_lower)
+  cohen_d_upper_ls <- c(cohen_d_upper_ls, cohen_d_upper)
+  cohen_d_p_ls <- c(cohen_d_p_ls, cohen_d_p)
+  beta_ls <- c(beta_ls, beta)
+  beta_lower_ls <- c(beta_lower_ls, beta_lower)
+  beta_upper_ls <- c(beta_upper_ls, beta_upper)
+  beta_p_ls <- c(beta_p_ls, beta_p)
+}
+
+res <- data.frame(
+  file = file_ls,
+  var = var_ls,
+  cohen_d_estimate = cohen_d_estimate_ls,
+  cohen_d_lower = cohen_d_lower_ls,
+  cohen_d_upper = cohen_d_upper_ls,
+  cohen_d_p = cohen_d_p_ls,
+  beta = beta_ls,
+  beta_lower = beta_lower_ls,
+  beta_upper = beta_upper_ls,
+  beta_p = beta_p_ls
+)
+
+res$var <- c("High systolic blood pressure (>=140 mmHg)",
+             "Obesity (BMI>=28)",
+             "Current smoker",
+             "Daily alcohol",
+             "Insufficient daily MVPA (<15 mins)",
+             "Diabetes history",
+             "Frequently processed meat intake (>=5 times weekly)",
+             "Frequently red meat intake (>=5 times weekly)",
+             "Frequently salt intake (usually or always)",
+             "Hypertension history")
+
+names(res)[2] <- "var_name"
+res$var_name <- factor(res$var_name,
+                       levels = c("Insufficient daily MVPA (<15 mins)",
+                                  "Frequently salt intake (usually or always)",
+                                  "Frequently processed meat intake (>=5 times weekly)",
+                                  "Frequently red meat intake (>=5 times weekly)",
+                                  "Hypertension history",
+                                  "Daily alcohol",
+                                  "Diabetes history",
+                                  "Obesity (BMI>=28)",
+                                  "High systolic blood pressure (>=140 mmHg)",
+                                  "Current smoker"))
+
+res$beta_abs <- abs(res$beta)
+res$beta_lower_abs <- abs(res$beta_upper)
+res$beta_upper_abs <- abs(res$beta_lower)
+
+p <- ggplot(res, aes(x = beta, y = var_name)) +
+  geom_point(size = 5, color = "#3182bd") +
+  geom_errorbar(aes(xmin = beta_lower, xmax = beta_upper), 
+                width = 0.2, color = "#3182bd") +
+  theme_minimal() +
+  labs(title = "Counterfactual simulation: elimination of risk factors",
+       y = "",
+       x = "Coefficient") +
+  theme(panel.grid.minor = element_blank(),
+        panel.grid.major = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(),
+        axis.title = element_text(size = 20),
+        axis.text.x = element_text(size = 20, color = "black"),
+        axis.text.y = element_text(size = 20, color = "black"),
+        axis.ticks = element_line(color = "black"),
+        legend.position = "none",
+        plot.title = element_text(size = 22, hjust = 0.5, vjust = 2))
+
+ggsave("fig6-f1.pdf", p, width = 12, height = 5)
+
+
+### telomere analysis
+telomere_var_ls <- c("smoke", "alcohol", "processed_meat", "red_meat", "salt",
+                     "pa", "hypertension", "diabetes", "bmi", "blood_pressure")
+names(dat_analysis)[c(8:9, 11:14, 17:18, 23, 26)] <- telomere_var_ls
+dat_analysis <- dat_analysis %>%
+  dplyr::mutate(pa = case_when(
+    pa < 15 ~ 1,
+    TRUE ~ 0
+  )) %>%
+  dplyr::mutate(bmi = case_when(
+    bmi >= 28 ~ 1,
+    TRUE ~ 0
+  )) %>%
+  dplyr::mutate(blood_pressure = case_when(
+    blood_pressure >= 140 ~ 1,
+    TRUE ~ 0
+  ))
+
+dat_analysis$pa <- factor(dat_analysis$pa)
+dat_analysis$bmi <- factor(dat_analysis$bmi)
+dat_analysis$blood_pressure <- factor(dat_analysis$blood_pressure)
+
+var_ls <- c()
+beta_ls <- c()
+beta_lower_ls <- c()
+beta_upper_ls <- c()
+beta_p_ls <- c()
+
+for (telomere_var in telomere_var_ls) {
+  dat_analysis$group <- dat_analysis[[telomere_var]]
+  model <- lm(telomere_adjusted ~ group + Age + Sex + Income + Employment + Education, dat_analysis)
+  # extract result
+  beta <- round(model$coefficients["group1"], 3)
+  beta_lower <- round(confint(model)["group1","2.5 %"], 3)
+  beta_upper <- round(confint(model)["group1","97.5 %"], 3)
+  beta_p <- summary(model)$coefficients["group1","Pr(>|t|)"]
+  
+  beta_p <- ifelse(beta_p < 0.001, "<0.001", as.character(round(beta_p, 3)))
+  
+  var_ls <- c(var_ls, telomere_var)
+  beta_ls <- c(beta_ls, beta)
+  beta_lower_ls <- c(beta_lower_ls, beta_lower)
+  beta_upper_ls <- c(beta_upper_ls, beta_upper)
+  beta_p_ls <- c(beta_p_ls, beta_p)
+}
+
+res_telomere <- data.frame(
+  var = var_ls,
+  beta = beta_ls,
+  beta_lower = beta_lower_ls,
+  beta_upper = beta_upper_ls,
+  beta_p = beta_p_ls
+)
+
+res_telomere$var <- c("Current smoker",
+                      "Daily alcohol",
+                      "Frequently processed meat intake (>=5 times weekly)",
+                      "Frequently red meat intake (>=5 times weekly)",
+                      "Frequently salt intake (usually or always)",
+                      "Insufficient daily MVPA (<15 mins)",
+                      "Hypertension history",
+                      "Diabetes history",
+                      "Obesity (BMI>=28)",
+                      "High systolic blood pressure (>=140 mmHg)")
+names(res_telomere)[1] <- "var_name"
+
+### wilcox test
+res_sort <- dplyr::arrange(res, beta)
+res_telomere_sort <- dplyr::arrange(res_telomere, beta)
+res_sort$rank <- c(1:10)
+res_telomere_sort$rank <- c(1:10)
+
+res_sort <- dplyr::arrange(res_sort, var_name)
+res_telomere_sort <- dplyr::arrange(res_telomere_sort, var_name)
+
+wilcox_result <- wilcox.test(res_sort$rank, 
+                             res_telomere_sort$rank, 
+                             paired = TRUE)
+print(wilcox_result)
+
+### plot
+res_telomere$var_name <- factor(res_telomere$var_name,
+                                levels = c("Insufficient daily MVPA (<15 mins)",
+                                           "Frequently salt intake (usually or always)",
+                                           "Frequently processed meat intake (>=5 times weekly)",
+                                           "Frequently red meat intake (>=5 times weekly)",
+                                           "Hypertension history",
+                                           "Daily alcohol",
+                                           "Diabetes history",
+                                           "Obesity (BMI>=28)",
+                                           "High systolic blood pressure (>=140 mmHg)",
+                                           "Current smoker"))
+
+p <- ggplot(res_telomere, aes(x = beta, y = var_name)) +
+  geom_point(size = 5, color = "#de2d26") +
+  geom_errorbar(aes(xmin = beta_lower, xmax = beta_upper), 
+                width = 0.2, color = "#de2d26") +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "grey") +
+  theme_minimal() +
+  labs(title = "Regression on adjusted telomere lenghth with risk factors",
+       y = "",
+       x = "Coefficient") +
+  theme(panel.grid.minor = element_blank(),
+        panel.grid.major = element_blank(),
+        panel.border = element_blank(),
+        axis.line = element_line(),
+        axis.title = element_text(size = 20),
+        axis.text.x = element_text(size = 20, color = "black"),
+        axis.text.y = element_text(size = 20, color = "black"),
+        axis.ticks = element_line(color = "black"),
+        legend.position = "none",
+        plot.title = element_text(size = 22, hjust = 0.5, vjust = 2))
+
+ggsave("fig6-f2.pdf", p, width = 12, height = 5)
+
 
 
