@@ -156,14 +156,14 @@ for(i in 1:length(disease)) {
     dat_cox <- subset(dat_age, time > 0) 
   }
   
-  folds <- createFolds(dat_cox$event, k = 3)
+  folds <- createFolds(dat_cox$event, k = 10)
   for (i in 1:length(var_ls)) {
     var <- var_ls[i]
     c_index_values <- c()
     c_index_lower_ls <- c()
     c_index_upper_ls <- c()
     
-    for(j in 1:3) {
+    for(j in 1:10) {
       # train and test set
       test_indices <- folds[[j]]
       train_data <- dat_cox[-test_indices, ]
@@ -184,17 +184,31 @@ for(i in 1:length(disease)) {
                                               surv.time = test_data$time,
                                               surv.event = test_data$event)
       c_index <- concordance_result$c.index
-      c_index_lower <- concordance_result$lower
-      c_index_upper <- concordance_result$upper
+      # c_index_lower <- concordance_result$lower
+      # c_index_upper <- concordance_result$upper
       # save the c-index
       c_index_values <- c(c_index_values, c_index)
-      c_index_lower_ls <- c(c_index_lower_ls, c_index_lower)
-      c_index_upper_ls <- c(c_index_upper_ls, c_index_upper)
+      # c_index_lower_ls <- c(c_index_lower_ls, c_index_lower)
+      # c_index_upper_ls <- c(c_index_upper_ls, c_index_upper)
       print(paste0(item, " ------------ ", var, " ------------ fold ", j))
     }
-    mean_c_index <- round(mean(c_index_values), digits = 3)
-    mean_c_index_lower <- round(mean(c_index_lower_ls), digits = 3)
-    mean_c_index_upper <- round(mean(c_index_upper_ls), digits = 3)
+    # 计算均值和标准误（SE）
+    mean_c_index <- mean(c_index_values)
+    n_folds <- length(c_index_values)
+    se_c_index <- sd(c_index_values) / sqrt(n_folds)
+    
+    # 使用t分布计算置信区间（自由度为n_folds-1）
+    t_value <- qt(0.975, df = n_folds - 1)
+    mean_c_index_lower <- mean_c_index - t_value * se_c_index
+    mean_c_index_upper <- mean_c_index + t_value * se_c_index
+    
+    mean_c_index <- round(mean_c_index, digits = 3)
+    mean_c_index_lower <- round(mean_c_index_lower, digits = 3)
+    mean_c_index_upper <- round(mean_c_index_upper, digits = 3)
+    
+    # mean_c_index <- round(mean(c_index_values), digits = 3)
+    # mean_c_index_lower <- round(mean(c_index_lower_ls), digits = 3)
+    # mean_c_index_upper <- round(mean(c_index_upper_ls), digits = 3)
     
     var_mean_c_index <- c(var_mean_c_index, mean_c_index)
     var_mean_c_index_lower <- c(var_mean_c_index_lower, mean_c_index_lower)
@@ -624,20 +638,17 @@ for(i in 1:length(disease)) {
   # cause-specific cox
   dat_cox <- dat_merge_analysis
   
-  ## data is small, use all data; results are similar
-  # folds <- createFolds(dat_cox$event, k = 3)
+  folds <- createFolds(dat_cox$event, k = 10)
   for (i in 1:length(var_ls)) {
     var <- var_ls[i]
     c_index_values <- c()
     c_index_lower_ls <- c()
     c_index_upper_ls <- c()
     
-    for(j in 1:1) {
-      # test_indices <- folds[[j]]
-      # train_data <- dat_cox[-test_indices, ]
-      # test_data <- dat_cox[test_indices, ]
-      train_data <- dat_cox
-      test_data <- dat_cox
+    for(j in 1:10) {
+      test_indices <- folds[[j]]
+      train_data <- dat_cox[-test_indices, ]
+      test_data <- dat_cox[test_indices, ]
       
       # build cause-specific cox model
       formula_covariates <- paste0("survobj ~ ", var)
@@ -654,18 +665,32 @@ for(i in 1:length(disease)) {
                                               surv.time = test_data$time,
                                               surv.event = test_data$event)
       c_index <- concordance_result$c.index
-      c_index_lower <- concordance_result$lower
-      c_index_upper <- concordance_result$upper
+      # c_index_lower <- concordance_result$lower
+      # c_index_upper <- concordance_result$upper
       
       # save c-index
       c_index_values <- c(c_index_values, c_index)
-      c_index_lower_ls <- c(c_index_lower_ls, c_index_lower)
-      c_index_upper_ls <- c(c_index_upper_ls, c_index_upper)
+      # c_index_lower_ls <- c(c_index_lower_ls, c_index_lower)
+      # c_index_upper_ls <- c(c_index_upper_ls, c_index_upper)
       print(paste0(item, " ------------ ", var, " ------------ fold ", j))
     }
-    mean_c_index <- round(mean(c_index_values), digits = 3)
-    mean_c_index_lower <- round(mean(c_index_lower_ls), digits = 3)
-    mean_c_index_upper <- round(mean(c_index_upper_ls), digits = 3)
+    # 计算均值和标准误（SE）
+    mean_c_index <- mean(c_index_values)
+    n_folds <- length(c_index_values)
+    se_c_index <- sd(c_index_values) / sqrt(n_folds)
+    
+    # 使用t分布计算置信区间（自由度为n_folds-1）
+    t_value <- qt(0.975, df = n_folds - 1)
+    mean_c_index_lower <- mean_c_index - t_value * se_c_index
+    mean_c_index_upper <- mean_c_index + t_value * se_c_index
+    
+    mean_c_index <- round(mean_c_index, digits = 3)
+    mean_c_index_lower <- round(mean_c_index_lower, digits = 3)
+    mean_c_index_upper <- round(mean_c_index_upper, digits = 3)
+    
+    # mean_c_index <- round(mean(c_index_values), digits = 3)
+    # mean_c_index_lower <- round(mean(c_index_lower_ls), digits = 3)
+    # mean_c_index_upper <- round(mean(c_index_upper_ls), digits = 3)
     
     var_mean_c_index <- c(var_mean_c_index, mean_c_index)
     var_mean_c_index_lower <- c(var_mean_c_index_lower, mean_c_index_lower)
@@ -1233,14 +1258,14 @@ for(i in 1:length(disease)) {
     dat_cox <- subset(dat_age, time > 0) 
   }
   
-  folds <- createFolds(dat_cox$event, k = 3)
+  folds <- createFolds(dat_cox$event, k = 10)
   for (i in 1:length(var_ls)) {
     var <- var_ls[i]
     c_index_values <- c()
     c_index_lower_ls <- c()
     c_index_upper_ls <- c()
     
-    for(j in 1:3) {
+    for(j in 1:10) {
       test_indices <- folds[[j]]
       train_data <- dat_cox[-test_indices, ]
       test_data <- dat_cox[test_indices, ]
@@ -1260,17 +1285,31 @@ for(i in 1:length(disease)) {
                                               surv.time = test_data$time,
                                               surv.event = test_data$event)
       c_index <- concordance_result$c.index
-      c_index_lower <- concordance_result$lower
-      c_index_upper <- concordance_result$upper
+      # c_index_lower <- concordance_result$lower
+      # c_index_upper <- concordance_result$upper
       # 存储c-index
       c_index_values <- c(c_index_values, c_index)
-      c_index_lower_ls <- c(c_index_lower_ls, c_index_lower)
-      c_index_upper_ls <- c(c_index_upper_ls, c_index_upper)
+      # c_index_lower_ls <- c(c_index_lower_ls, c_index_lower)
+      # c_index_upper_ls <- c(c_index_upper_ls, c_index_upper)
       print(paste0(item, " ------------ ", var, " ------------ fold ", j))
     }
-    mean_c_index <- round(mean(c_index_values), digits = 3)
-    mean_c_index_lower <- round(mean(c_index_lower_ls), digits = 3)
-    mean_c_index_upper <- round(mean(c_index_upper_ls), digits = 3)
+    # 计算均值和标准误（SE）
+    mean_c_index <- mean(c_index_values)
+    n_folds <- length(c_index_values)
+    se_c_index <- sd(c_index_values) / sqrt(n_folds)
+    
+    # 使用t分布计算置信区间（自由度为n_folds-1）
+    t_value <- qt(0.975, df = n_folds - 1)
+    mean_c_index_lower <- mean_c_index - t_value * se_c_index
+    mean_c_index_upper <- mean_c_index + t_value * se_c_index
+    
+    mean_c_index <- round(mean_c_index, digits = 3)
+    mean_c_index_lower <- round(mean_c_index_lower, digits = 3)
+    mean_c_index_upper <- round(mean_c_index_upper, digits = 3)
+    
+    # mean_c_index <- round(mean(c_index_values), digits = 3)
+    # mean_c_index_lower <- round(mean(c_index_lower_ls), digits = 3)
+    # mean_c_index_upper <- round(mean(c_index_upper_ls), digits = 3)
     
     var_mean_c_index <- c(var_mean_c_index, mean_c_index)
     var_mean_c_index_lower <- c(var_mean_c_index_lower, mean_c_index_lower)
@@ -2655,14 +2694,14 @@ for(i in 1:length(disease)) {
     dat_cox <- subset(dat_age, time > 0) 
   }
 
-  folds <- createFolds(dat_cox$event, k = 3)
+  folds <- createFolds(dat_cox$event, k = 10)
   for (i in 1:length(var_ls)) {
     var <- var_ls[i]
     c_index_values <- c()
     c_index_lower_ls <- c()
     c_index_upper_ls <- c()
     
-    for(j in 1:3) {
+    for(j in 1:10) {
       # train and test split
       test_indices <- folds[[j]]
       train_data <- dat_cox[-test_indices, ]
@@ -2683,17 +2722,31 @@ for(i in 1:length(disease)) {
                                               surv.time = test_data$time,
                                               surv.event = test_data$event)
       c_index <- concordance_result$c.index
-      c_index_lower <- concordance_result$lower
-      c_index_upper <- concordance_result$upper
+      # c_index_lower <- concordance_result$lower
+      # c_index_upper <- concordance_result$upper
       # 存储c-index
       c_index_values <- c(c_index_values, c_index)
-      c_index_lower_ls <- c(c_index_lower_ls, c_index_lower)
-      c_index_upper_ls <- c(c_index_upper_ls, c_index_upper)
+      # c_index_lower_ls <- c(c_index_lower_ls, c_index_lower)
+      # c_index_upper_ls <- c(c_index_upper_ls, c_index_upper)
       print(paste0(item, " ------------ ", var, " ------------ fold ", j))
     }
-    mean_c_index <- round(mean(c_index_values), digits = 3)
-    mean_c_index_lower <- round(mean(c_index_lower_ls), digits = 3)
-    mean_c_index_upper <- round(mean(c_index_upper_ls), digits = 3)
+    # 计算均值和标准误（SE）
+    mean_c_index <- mean(c_index_values)
+    n_folds <- length(c_index_values)
+    se_c_index <- sd(c_index_values) / sqrt(n_folds)
+    
+    # 使用t分布计算置信区间（自由度为n_folds-1）
+    t_value <- qt(0.975, df = n_folds - 1)
+    mean_c_index_lower <- mean_c_index - t_value * se_c_index
+    mean_c_index_upper <- mean_c_index + t_value * se_c_index
+    
+    mean_c_index <- round(mean_c_index, digits = 3)
+    mean_c_index_lower <- round(mean_c_index_lower, digits = 3)
+    mean_c_index_upper <- round(mean_c_index_upper, digits = 3)
+    
+    # mean_c_index <- round(mean(c_index_values), digits = 3)
+    # mean_c_index_lower <- round(mean(c_index_lower_ls), digits = 3)
+    # mean_c_index_upper <- round(mean(c_index_upper_ls), digits = 3)
     
     var_mean_c_index <- c(var_mean_c_index, mean_c_index)
     var_mean_c_index_lower <- c(var_mean_c_index_lower, mean_c_index_lower)
@@ -4213,6 +4266,5 @@ p <- ggplot(res_telomere, aes(x = beta, y = var_name)) +
         plot.title = element_text(size = 22, hjust = 0.5, vjust = 2))
 
 ggsave("fig6-f2.pdf", p, width = 12, height = 5)
-
 
 
