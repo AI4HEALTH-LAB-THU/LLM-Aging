@@ -1,5 +1,5 @@
-# LLMs Are Your Secret Aging Predictors
-The code in this repository is used for the primary analysis presented in the paper ***Leveraging Large Language Models to Assess Overall and Organ-specific Aging in Large-scale General Populations***. The repository consists of two main components: **vllm_inference** and **Statistical_Analysis**.
+# LLMs Are Your Secret Aging Predictors (Nature Medicine, 2025)
+The code in this repository is used for the primary analysis presented in the paper ***Large language model-based biological age prediction in large-scale populations (Nature Medicine, 2025; https://doi.org/10.1038/s41591-025-03856-8)***. The repository consists of two main components: **vllm_inference** and **Statistical_Analysis**.
 
 **1.vllm_inference:** This part contains the inference code that utilizes large language models to predict multidimensional aging for individuals. The inference is implemented using the vllm framework.
 
